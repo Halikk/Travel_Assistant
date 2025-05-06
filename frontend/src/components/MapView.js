@@ -12,7 +12,6 @@ const containerStyle = {
 }
 
 export default function MapView({ coords = [] }) {
-  // 1) Google Maps JS API yükleme durumu
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY
   })
@@ -20,20 +19,16 @@ export default function MapView({ coords = [] }) {
   const mapRef = useRef(null)
   const [directions, setDirections] = useState(null)
 
-  // 2) Geçerli koordinatları filtrele
-  const validCoords = coords.filter(
+  const valid = coords.filter(
     p => Number.isFinite(p.lat) && Number.isFinite(p.lng)
   )
 
-  // 3) Rota hesapla ve tüm noktaları kapsayacak şekilde fitBounds uygula
   useEffect(() => {
-    if (!isLoaded || loadError || validCoords.length < 2) return
+    if (!isLoaded || loadError || valid.length < 2) return
 
-    const origin      = validCoords[0]
-    const destination = validCoords[validCoords.length - 1]
-    const waypoints   = validCoords
-      .slice(1, -1)
-      .map(loc => ({ location: loc, stopover: true }))
+    const origin = valid[0]
+    const destination = valid[valid.length - 1]
+    const waypoints = valid.slice(1, -1).map(p => ({ location: p, stopover: true }))
 
     const svc = new window.google.maps.DirectionsService()
     svc.route(
@@ -43,31 +38,26 @@ export default function MapView({ coords = [] }) {
         waypoints,
         travelMode: window.google.maps.TravelMode.DRIVING
       },
-      (result, status) => {
+      (res, status) => {
         if (status === 'OK') {
-          setDirections(result)
-          // tüm rota noktalarını kapsayacak bound
+          setDirections(res)
           const bounds = new window.google.maps.LatLngBounds()
-          validCoords.forEach(c => bounds.extend(c))
+          valid.forEach(pt => bounds.extend(pt))
           mapRef.current.fitBounds(bounds)
         } else {
-          console.error('DirectionsService error:', status)
+          console.error('Directions error:', status)
         }
       }
     )
   }, [isLoaded, loadError, coords])
 
-  if (loadError) {
-    return <div className="p-4 text-red-600">Harita yüklenemedi.</div>
-  }
-  if (!isLoaded) {
-    return <div className="p-4">Harita yükleniyor…</div>
-  }
+  if (loadError) return <div className="p-4 text-red-600">Harita yüklenemedi.</div>
+  if (!isLoaded) return <div className="p-4">Harita yükleniyor…</div>
 
   return (
     <GoogleMap
       mapContainerStyle={containerStyle}
-      center={validCoords[0] || { lat: 39.9, lng: 32.8 }}
+      center={valid[0] || { lat: 39.9, lng: 32.8 }}
       zoom={10}
       onLoad={map => (mapRef.current = map)}
       options={{
@@ -84,7 +74,6 @@ export default function MapView({ coords = [] }) {
           options={{
             suppressMarkers: true,
             polylineOptions: {
-              zIndex: 1,
               strokeColor: '#1976D2',
               strokeWeight: 6
             }
@@ -92,14 +81,15 @@ export default function MapView({ coords = [] }) {
         />
       )}
 
-      {validCoords.map((pos, idx) => (
+      {/* Sadece ara duraklar için numaralı marker */}
+      {valid.slice(1, -1).map((pos, idx) => (
         <Marker
           key={idx}
           position={pos}
           label={{
             text: String(idx + 1),
             color: 'white',
-            fontSize: '16px',
+            fontSize: '14px',
             fontWeight: 'bold'
           }}
           zIndex={1000 + idx}
