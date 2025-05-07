@@ -1,3 +1,4 @@
+// src/components/PlanView.jsx
 import React, { useState } from 'react'
 import axios from 'axios'
 
@@ -42,49 +43,80 @@ export default function PlanView({ onPlan }) {
   }
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-2">1) Tercih ve Waypoint Gir</h2>
-      <textarea
-        className="w-full border p-2 mb-2"
-        rows={2}
-        placeholder="Ne tür yerler seversiniz?"
-        value={text}
-        onChange={e => setText(e.target.value)}
-      />
-      {waypoints.map((wp, i) => (
-        <div key={i} className="flex gap-2 mb-1">
-          <input
-            type="number"
-            step="any"
-            placeholder="Lat"
-            className="border p-1 flex-1"
-            value={wp.latitude}
-            onChange={e => updateWP(i, 'latitude', e.target.value)}
-          />
-          <input
-            type="number"
-            step="any"
-            placeholder="Lng"
-            className="border p-1 flex-1"
-            value={wp.longitude}
-            onChange={e => updateWP(i, 'longitude', e.target.value)}
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-8 space-y-6">
+        <h2 className="text-3xl font-extrabold text-gray-800 text-center">
+          1) Tercih ve Waypoint Gir
+        </h2>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Ne tür yerler seversiniz?
+          </label>
+          <textarea
+            className="w-full border border-gray-300 rounded-xl p-3 h-24 resize-none
+                       focus:outline-none focus:ring-2 focus:ring-blue-400"
+            value={text}
+            onChange={e => setText(e.target.value)}
           />
         </div>
-      ))}
-      <button
-        className="text-sm text-blue-600 mb-4"
-        onClick={addWaypointField}
-      >
-        + Başka waypoint ekle
-      </button>
-      <br/>
-      <button
-        className="bg-blue-500 text-white py-2 px-4 rounded"
-        onClick={handlePlan}
-        disabled={loading}
-      >
-        {loading ? 'Planlanıyor…' : 'Planla & Önerileri Getir'}
-      </button>
+
+        <div className="space-y-4">
+          {waypoints.map((wp, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-2 gap-4 items-end"
+            >
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Lat #{i + 1}
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-xl p-2
+                             focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="38.461582"
+                  value={wp.latitude}
+                  onChange={e => updateWP(i, 'latitude', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Lng #{i + 1}
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-xl p-2
+                             focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="27.213045"
+                  value={wp.longitude}
+                  onChange={e => updateWP(i, 'longitude', e.target.value)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-between items-center">
+          <button
+            type="button"
+            onClick={addWaypointField}
+            className="text-blue-500 hover:text-blue-600 font-medium"
+          >
+            + Başka waypoint ekle
+          </button>
+        </div>
+
+        <button
+          onClick={handlePlan}
+          disabled={loading}
+          className="w-full bg-gradient-to-r from-blue-500 to-indigo-600
+                     hover:from-blue-600 hover:to-indigo-700 text-white
+                     font-semibold py-3 rounded-xl shadow-lg transition"
+        >
+          {loading ? 'Planlanıyor…' : 'Planla & Önerileri Getir'}
+        </button>
+      </div>
     </div>
   )
 }

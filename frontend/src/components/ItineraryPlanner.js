@@ -1,7 +1,8 @@
+// src/components/ItineraryPlanner.jsx
 import React, { useEffect, useState } from 'react'
 import MapView from './MapView'
 
-// Haversine ile metre cinsinden mesafe
+// Haversine ile iki nokta arası mesafe
 function haversine(p1, p2) {
   const toRad = x => (x * Math.PI) / 180
   const R = 6371e3
@@ -9,18 +10,19 @@ function haversine(p1, p2) {
   const Δφ = toRad(p2.latitude - p1.latitude)
   const Δλ = toRad(p2.longitude - p1.longitude)
   const a =
-    Math.sin(Δφ/2)**2 +
-    Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2
+    Math.sin(Δφ / 2) ** 2 +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
   return 2 * R * Math.asin(Math.sqrt(a))
 }
 
+// En yakın komşuya göre sırala (greedy)
 function reorderNearest(sel) {
   if (sel.length < 3) return sel
   const [start, ...rest] = sel
   const end = rest.pop()
   const ordered = [start]
   let remaining = [...rest]
-  let current   = start
+  let current = start
 
   while (remaining.length) {
     let idxMin = 0
@@ -40,23 +42,30 @@ function reorderNearest(sel) {
   return ordered
 }
 
+// Sayıya dönüştür (virgül yerine nokta destekler)
 function toNum(s) {
-  // virgülü noktaya çevirip parseFloat
   return parseFloat(String(s).replace(/,/g, '.'))
 }
+
+// Kategori başlığını okunabilir hale getir
+const niceCategory = cat =>
+  cat
+    .split('_')
+    .map(w => w[0].toUpperCase() + w.slice(1))
+    .join(' ')
 
 export default function ItineraryPlanner({
   suggestions = [],
   initialLocation,
   finishLocation
 }) {
-  // 1) kesin sayı start & end
   const startPlace = {
     external_id: '__start__',
     name:        '📍 Başlangıç',
     latitude:    toNum(initialLocation.latitude),
     longitude:   toNum(initialLocation.longitude)
   }
+
   const endPlace = {
     external_id: '__end__',
     name:        '🏁 Bitiş',
@@ -64,12 +73,10 @@ export default function ItineraryPlanner({
     longitude:   toNum(finishLocation.longitude)
   }
 
-  // 2) places ve selected
-  const [places,   setPlaces]   = useState([startPlace, ...suggestions, endPlace])
+  const [places, setPlaces]     = useState([startPlace, ...suggestions, endPlace])
   const [selected, setSelected] = useState([startPlace, endPlace])
 
   useEffect(() => {
-    // önerilerde de parseFloat
     const parsed = suggestions.map(p => ({
       ...p,
       latitude:  toNum(p.latitude),
@@ -80,14 +87,13 @@ export default function ItineraryPlanner({
     setSelected([startPlace, endPlace])
   }, [suggestions, initialLocation, finishLocation])
 
-  // 3) toggle => en yakın-first reorder
   const toggleSelect = p => {
     if (p.external_id === '__start__' || p.external_id === '__end__') return
     setSelected(prev => {
       const withoutEnd = prev.filter(x => x.external_id !== '__end__')
       let next
       if (withoutEnd.some(x => x.external_id === p.external_id)) {
-        // çıkart
+        // çıkar
         next = [
           ...withoutEnd.filter(x => x.external_id !== p.external_id),
           endPlace
@@ -100,36 +106,72 @@ export default function ItineraryPlanner({
     })
   }
 
-  // 4) coords dizisi
+  const suggestionOnly = places.filter(
+    p => p.external_id !== '__start__' && p.external_id !== '__end__'
+  )
+
+  const groups = suggestionOnly.reduce((acc, p) => {
+    acc[p.category] = acc[p.category] || []
+    acc[p.category].push(p)
+    return acc
+  }, {})
+
   const coords = selected
-    .map(p => ({ lat: p.latitude, lng: p.longitude }))
+    .map(p => ({
+      lat: toNum(p.latitude),
+      lng: toNum(p.longitude)
+    }))
     .filter(pt => Number.isFinite(pt.lat) && Number.isFinite(pt.lng))
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-2">Yer Seçimi</h2>
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        {places.map(p => (
-          <button
-            key={p.external_id}
-            onClick={() => toggleSelect(p)}
-            className={`border p-2 rounded ${
-              selected.some(s => s.external_id === p.external_id)
-                ? 'bg-green-100'
-                : 'hover:bg-gray-100'
-            }`}
-          >
-            {p.name}
-          </button>
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
+      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8 space-y-6">
+        <h2 className="text-3xl font-bold text-center text-gray-800 mb-4">
+          Rota Planlayıcı
+        </h2>
+
+        {/* Kategorilere göre gruplanmış öneriler */}
+        {Object.entries(groups).map(([category, items]) => (
+          <div key={category}>
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">
+              {niceCategory(category)}
+            </h3>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {items.map(p => (
+                <button
+                  key={p.external_id}
+                  onClick={() => toggleSelect(p)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition
+                    ${
+                      selected.some(s => s.external_id === p.external_id)
+                        ? 'bg-green-500 text-white'
+                        : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                    }`}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
+
+        {/* Seçilen rota */}
+        <div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">
+            Rota Adımları ({selected.length})
+          </h3>
+          <ol className="list-decimal list-inside space-y-1 text-gray-600">
+            {selected.map((p, i) => (
+              <li key={p.external_id}>{p.name}</li>
+            ))}
+          </ol>
+        </div>
+
+        {/* Harita */}
+        <div className="h-96 rounded-xl overflow-hidden border">
+          <MapView coords={coords} />
+        </div>
       </div>
-
-      <h2 className="text-xl font-semibold mb-2">Rota Adımları</h2>
-      <ol className="list-decimal list-inside mb-4">
-        {selected.map((p, i) => <li key={p.external_id}>{p.name}</li>)}
-      </ol>
-
-      <MapView coords={coords} />
     </div>
   )
 }
