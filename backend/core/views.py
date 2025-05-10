@@ -1,6 +1,9 @@
 # backend/core/views.py
 import googlemaps
 from django.conf import settings
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.decorators import action, authentication_classes
 from .models import UserProfile, Place
 from rest_framework.decorators import api_view, permission_classes
@@ -168,10 +171,11 @@ def optimize_itinerary(request):
 
     return Response({'optimized_route': optimized_ids})
 
+@method_decorator(csrf_exempt, name='dispatch')
 class SignupView(generics.CreateAPIView):
     serializer_class = SignupSerializer
     permission_classes = [permissions.AllowAny]
-
+    authentication_classes = []
     def create(self, request, *args, **kwargs):
         # 1) İstek verisini serialize et, validasyon yap
         serializer = self.get_serializer(data=request.data)
@@ -199,3 +203,20 @@ class ItineraryViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+class CustomAuthToken(ObtainAuthToken):
+    permission_classes = [permissions.AllowAny]  # Herkese izin ver
+    authentication_classes = []                 # Bu view için hiçbir kimlik doğrulama yöntemi çalıştırma
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data,
+                                           context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        token, created = Token.objects.get_or_create(user=user)
+        return Response({
+            'token': token.key,
+            'user_id': user.pk, # İsteğe bağlı: Frontend'in ihtiyacı olabilir
+            'username': user.username, # İsteğe bağlı
+            # 'user': UserSerializer(user, context={'request': request}).data # Tam kullanıcı bilgisi için
+        })

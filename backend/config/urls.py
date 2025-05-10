@@ -25,8 +25,8 @@ from core.views import (
     UserProfileViewSet, PlaceViewSet, ItineraryViewSet,
     PlanViewSet
 )
-
 from core.views import SignupView
+from core.views import CustomAuthToken
 
 router = DefaultRouter()
 router.register(r'profiles', UserProfileViewSet, basename='profile')
@@ -37,9 +37,8 @@ router.register(r'plan', PlanViewSet, basename='plan')
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/auth/signup/', SignupView.as_view(), name='signup'),
-    path('api/v1/auth/login/', obtain_auth_token, name='login'),
+    path('api/v1/auth/login/',  CustomAuthToken.as_view(), name='login'),
     path('api/v1/', include(router.urls)),
     path('api-auth/', include('rest_framework.urls')),  # oturum açma/kapatma
-    path('api-token-auth/', obtain_auth_token, name='api_token_auth'),
     path('api/v1/itineraries/optimize/', optimize_itinerary, name='optimize-itinerary'),
 ]
