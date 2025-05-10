@@ -26,6 +26,8 @@ from core.views import (
     PlanViewSet
 )
 
+from core.views import SignupView
+
 router = DefaultRouter()
 router.register(r'profiles', UserProfileViewSet, basename='profile')
 router.register(r'places', PlaceViewSet, basename='place')
@@ -34,6 +36,8 @@ router.register(r'plan', PlanViewSet, basename='plan')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/v1/auth/signup/', SignupView.as_view(), name='signup'),
+    path('api/v1/auth/login/', obtain_auth_token, name='login'),
     path('api/v1/', include(router.urls)),
     path('api-auth/', include('rest_framework.urls')),  # oturum açma/kapatma
     path('api-token-auth/', obtain_auth_token, name='api_token_auth'),

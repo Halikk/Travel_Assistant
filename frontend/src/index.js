@@ -1,11 +1,11 @@
 import React from 'react'
-import { createRoot } from 'react-dom/client'
-import TravelPlanner from './components/TravelPlanner'
-import './index.css';
-const root = createRoot(document.getElementById('root'))
+import ReactDOM from 'react-dom/client'
+import './index.css'        // Tailwind veya başka global CSS
+import App from './App'
 
+const root = ReactDOM.createRoot(document.getElementById('root'))
 root.render(
   <React.StrictMode>
-    <TravelPlanner />
+    <App />
   </React.StrictMode>
 )

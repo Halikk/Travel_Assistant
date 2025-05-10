@@ -1,23 +1,23 @@
 # backend/core/views.py
 import googlemaps
 from django.conf import settings
-from rest_framework import viewsets, status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 from rest_framework.decorators import action, authentication_classes
-from .models import UserProfile, Place, Itinerary
+from .models import UserProfile, Place
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
+
 from core.utils.tsp_solver import solve_tsp
 from core.models import Place
 from .serializers import (
-    UserProfileSerializer, PlaceSerializer, ItinerarySerializer
-)
+    UserProfileSerializer, PlaceSerializer, UserSerializer)
 from .utils.tsp_solver import solve_tsp
 from core.utils.recommender import get_suggestions_along_route
 
-
+from rest_framework import viewsets, permissions, generics, status
+from rest_framework.response import Response
+from rest_framework.authtoken.models import Token
+from .serializers import SignupSerializer, ItinerarySerializer
+from .models import Itinerary
 
 class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.select_related('user').all()
@@ -167,3 +167,35 @@ def optimize_itinerary(request):
     optimized_ids = [route_ids[i] for i in optimized_order]
 
     return Response({'optimized_route': optimized_ids})
+
+class SignupView(generics.CreateAPIView):
+    serializer_class = SignupSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        # 1) İstek verisini serialize et, validasyon yap
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # 2) Kayıt işlemi: serializer.save() yeni User döner
+        user = serializer.save()
+        # 3) Token oluştur veya al
+        token, _ = Token.objects.get_or_create(user=user)
+        # 4) İkisinin de verisini dön
+        return Response(
+            {
+                "user": UserSerializer(user).data,
+                "token": token.key
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+# 2. Itinerary viewset
+class ItineraryViewSet(viewsets.ModelViewSet):
+    serializer_class = ItinerarySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Itinerary.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
