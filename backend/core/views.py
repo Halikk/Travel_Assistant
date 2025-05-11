@@ -38,50 +38,147 @@ class PlaceViewSet(viewsets.ModelViewSet):
 
 
 class ItineraryViewSet(viewsets.ModelViewSet):
-    queryset = Itinerary.objects.select_related('user').all()
     serializer_class = ItinerarySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Bu viewset sadece o anki giriş yapmış (authenticated) kullanıcıya ait
+        Itinerary nesnelerini döndürmelidir.
+        """
+        user = self.request.user
+        # print(f"DEBUG: get_queryset - Kullanıcı: {user}, Authenticated: {user.is_authenticated}") # Debug için
+        if user and user.is_authenticated:
+            return Itinerary.objects.filter(user=user).order_by('-created_at')
+        # Eğer kullanıcı authenticate olmamışsa (normalde IsAuthenticated bunu engeller ama bir güvenlik önlemi)
+        # veya user None ise (beklenmedik bir durum) boş queryset döndür.
+        return Itinerary.objects.none()
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def optimize(self, request, pk=None):
-        """
-        POST /api/v1/itineraries/{id}/optimize/
-        Mevcut rota (external_id listesi) için TSP optimizasyonu yapar,
-        güncellenmiş sıralamayı kaydeder ve döner.
-        """
+    # Itinerary için optimize action'ı
+    @action(detail=True, methods=['post'], url_path='optimize-route')
+    def optimize_route(self, request, pk=None):
         itinerary = self.get_object()
-        external_ids = itinerary.route or []
+        current_route_ids = itinerary.route # Bu bir liste olmalı (örn: ["id1", "__start__", "id2"])
 
-        # 1) Place nesnelerini çek
-        places = Place.objects.filter(external_id__in=external_ids)
-        place_map = {p.external_id: p for p in places}
-        coords = []
-        for eid in external_ids:
-            p = place_map.get(eid)
-            if not p:
-                return Response(
-                    {"detail": f"Place with external_id={eid} not found."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            coords.append((p.latitude, p.longitude))
+        if not current_route_ids or not isinstance(current_route_ids, list):
+            return Response({"detail": "Itinerary has no route or route is not a list."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 2) TSP çöz
-        optimized_idx = solve_tsp(coords)
-        if optimized_idx is None:
+        # Optimizasyon için sadece Place ID'lerini alalım
+        # ve özel belirteçlerin (`__start__`, `__end__`) konumlarını saklayalım
+        place_ids_for_tsp = []
+        special_tokens = {} # örn: {"__start__": 0, "id1": 1, "__end__": 2} gibi bir map oluşturabiliriz
+                            # ya da sadece __start__ ve __end__'in index'lerini bulabiliriz.
+
+        start_node_id = None
+        end_node_id = None
+        temp_place_ids_for_tsp = []
+
+        for item_id in current_route_ids:
+            if isinstance(item_id, str) and item_id.startswith("__"):
+                if item_id == "__start__":
+                    # Başlangıç noktası olarak işaretlenen bir sonraki Place ID'sini al
+                    # Bu varsayımsal bir kullanım. Gerçekte __start__ ve __end__
+                    # doğrudan bir Place ID'ye işaret etmeli veya TSP solver'a
+                    # sabitlenmiş node'lar olarak geçilmeli.
+                    # Şimdilik, "__start__" ve "__end__" gibi belirteçlerin
+                    # optimize edilecek asıl Place ID'leri listesinde olmadığını varsayalım.
+                    # Bu belirteçler daha çok frontend'de görsel amaçlı olabilir.
+                    # VEYA, bu belirteçlerin kendileri optimize edilecek listede
+                    # sabitlenmiş noktaları temsil edebilir.
+                    # Modelinizdeki `route` tanımı ("__start__", "place1", ...)
+                    # bunun nasıl ele alınacağını belirler.
+                    # Eğer `__start__` bir Place ID'sine karşılık geliyorsa, o ID'yi kullan.
+                    # Eğer değilse, bu mantığı TSP solver'ınıza göre ayarlamanız gerekir.
+
+                    # Basit bir senaryo: __start__ ve __end__ sabit değilse
+                    # ve route sadece optimize edilecek place ID'lerini içeriyorsa:
+                    pass # Bu döngüde özel bir işlem yapma
+                elif item_id == "__end__":
+                    pass
+                else: # Diğer özel belirteçler (varsa)
+                    pass
+            else: # Bu bir Place ID'si olmalı
+                temp_place_ids_for_tsp.append(item_id)
+
+        place_ids_for_tsp = temp_place_ids_for_tsp
+
+        if len(place_ids_for_tsp) < 2:
             return Response(
-                {"detail": "No TSP solution found."},
+                {"detail": "Not enough actual places in the route to optimize (minimum 2)."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 3) Yeni external_id sırası
-        optimized_route = [external_ids[i] for i in optimized_idx]
-        itinerary.route = optimized_route
+        # Place nesnelerini ve koordinatlarını al
+        places = Place.objects.filter(external_id__in=place_ids_for_tsp)
+        place_map = {p.external_id: p for p in places}
+
+        coords = []
+        valid_ordered_ids_for_tsp = [] # TSP'ye giren ID'lerin sırasını tut
+        for ext_id in place_ids_for_tsp: # Sadece optimize edilecek ID'ler üzerinden git
+            place = place_map.get(ext_id)
+            if place:
+                coords.append((float(place.latitude), float(place.longitude)))
+                valid_ordered_ids_for_tsp.append(ext_id)
+            else:
+                # Bu durum serializer'daki validate_route ile engellenmeli
+                return Response(
+                    {"detail": f"Place with external_id '{ext_id}' in route not found in database."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        if len(coords) < 2: # Tekrar kontrol, eğer bazı ID'ler DB'de bulunamadıysa
+             return Response(
+                {"detail": "Not enough valid places to optimize (minimum 2)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # TSP çözümünü al
+        # Eğer __start__ ve __end__ sabitlenmişse, onların TSP'ye giren listedeki
+        # index'lerini bulup solve_tsp'ye `start_index` ve `end_index` olarak geçmelisiniz.
+        # Modelinizdeki `route` yapısı ("__start__", "place1", ...) ise,
+        # `__start__` ve `__end__` belirteçlerini koruyarak aradaki `placeX` ID'lerini optimize etmeniz gerekebilir.
+        # Bu durumda, `solve_tsp` fonksiyonunuzun bu tür sabitlenmiş başlangıç/bitiş noktalarını
+        # veya alt-rota optimizasyonunu desteklemesi gerekir.
+
+        # Şimdilik, `place_ids_for_tsp` listesindeki tüm yerlerin optimize edildiğini varsayalım.
+        optimized_indices = solve_tsp(coords) # start_index ve end_index olmadan
+
+        if optimized_indices is None:
+            return Response({"detail": "Could not optimize the route."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Optimize edilmiş Place ID sırasını oluştur
+        optimized_place_ids_sequence = [valid_ordered_ids_for_tsp[i] for i in optimized_indices]
+
+        # Şimdi, orijinal `itinerary.route` listesini bu yeni optimize edilmiş sıra ile güncellemeliyiz.
+        # Eğer `__start__` gibi özel belirteçler varsa, onları korumalıyız.
+        # Örnek: Orijinal: ["__start__", "id1", "id2", "id3", "__end__"]
+        # Optimize edilen ("id1", "id2", "id3") -> ("id2", "id1", "id3")
+        # Yeni Rota: ["__start__", "id2", "id1", "id3", "__end__"]
+
+        new_route_list = []
+        opt_idx_ptr = 0
+        for item in current_route_ids:
+            if isinstance(item, str) and item.startswith("__"):
+                new_route_list.append(item) # Özel belirteci koru
+            else:
+                # Bu bir place ID olmalı ve optimize edilmiş listede yer almalı
+                if opt_idx_ptr < len(optimized_place_ids_sequence):
+                    new_route_list.append(optimized_place_ids_sequence[opt_idx_ptr])
+                    opt_idx_ptr += 1
+                else:
+                    # Bu durum, orijinal route ile optimize edilen ID'ler arasında
+                    # bir tutarsızlık olduğunu gösterir. Hata logla veya ver.
+                    print(f"Warning: Mismatch during route reconstruction for item {item}")
+                    # new_route_list.append(item) # Orijinalini ekle (güvenli fallback)
+
+        itinerary.route = new_route_list
         itinerary.save()
 
-        return Response(self.get_serializer(itinerary).data)
+        serializer = self.get_serializer(itinerary)
+        return Response(serializer.data)
 
 class PlanViewSet(viewsets.ViewSet):
     """
@@ -192,17 +289,6 @@ class SignupView(generics.CreateAPIView):
             },
             status=status.HTTP_201_CREATED
         )
-
-# 2. Itinerary viewset
-class ItineraryViewSet(viewsets.ModelViewSet):
-    serializer_class = ItinerarySerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return Itinerary.objects.filter(user=self.request.user).order_by('-created_at')
-
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
 
 class CustomAuthToken(ObtainAuthToken):
     permission_classes = [permissions.AllowAny]  # Herkese izin ver

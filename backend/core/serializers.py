@@ -26,13 +26,6 @@ class SignupSerializer(serializers.ModelSerializer):
             password=validated_data['password']
         )
 
-class ItinerarySerializer(serializers.ModelSerializer):
-    class Meta:
-        model  = Itinerary
-        fields = ['id','name','route','created_at']
-        read_only_fields = ['id','created_at']
-
-
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 
@@ -43,11 +36,57 @@ class UserProfileSerializer(serializers.ModelSerializer):
 class PlaceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Place
-        fields = ['id', 'external_id', 'name', 'latitude', 'longitude', 'category']
+        fields = ['external_id', 'name', 'latitude', 'longitude', 'category']
+
 
 class ItinerarySerializer(serializers.ModelSerializer):
-    # route bir liste olduğu için doğrudan JSONField; istersen nested PlaceSerializer ile genişletebilirsin
+    # places_in_order'ı read-only olarak göstermek için.
+    # Bu, PlaceSerializer'ı kullanarak her bir Place'in detaylarını döndürür.
+    places_details = PlaceSerializer(source='places_in_order', many=True, read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True)
+
     class Meta:
         model = Itinerary
-        fields = ['id', 'user', 'name', 'created_at', 'route']
-        read_only_fields = ['created_at', 'user']
+        fields = [
+            'id',
+            'user', # Yazma işlemlerinde otomatik atanacak, okumada ID döner
+            'user_username', # Okumada kullanıcı adını gösterir
+            'name',
+            'description', # Eğer Itinerary modeline eklerseniz
+            'route',       # Kaydetme ve güncelleme için bu alan kullanılır (external_id listesi)
+            'places_details', # Detayları göstermek için bu alan kullanılır (Place nesneleri)
+            'created_at',
+            'updated_at'
+        ]
+        # user alanı perform_create ile doldurulacağı için read_only_fields'e eklenebilir.
+        # Ancak, bazen admin arayüzü veya testler için explicit set etmek gerekebilir.
+        # Şimdilik perform_create'e güvenelim.
+        read_only_fields = [
+            'user',  # <-- BURAYA 'user' ALANINI EKLEYİN
+            'user_username',
+            'created_at',
+            'updated_at',
+            'places_details'
+        ]
+
+    def validate_route(self, value):
+        """
+        Route alanının bir liste olduğunu ve içindeki her bir external_id'nin
+        mevcut bir Place nesnesine karşılık geldiğini doğrular.
+        Özel belirteçler ("__start__" gibi) varsa, bunları atlar.
+        """
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Route must be a list of place external IDs.")
+
+        if value: # Eğer route boş değilse
+            # Sadece Place ID'lerini al (özel belirteçleri filtrele)
+            place_ids_to_validate = [item for item in value if isinstance(item, str) and not item.startswith("__")]
+
+            if place_ids_to_validate: # Eğer doğrulanacak ID varsa
+                existing_place_ids = set(
+                    Place.objects.filter(external_id__in=place_ids_to_validate).values_list('external_id', flat=True)
+                )
+                for place_id in place_ids_to_validate:
+                    if place_id not in existing_place_ids:
+                        raise serializers.ValidationError(f"Place with external_id '{place_id}' does not exist.")
+        return value # Orijinal route listesini (özel belirteçler dahil) döndür
