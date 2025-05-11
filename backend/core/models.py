@@ -31,6 +31,9 @@ class Itinerary(models.Model):
     name = models.CharField(max_length=200, blank=True)  # Kullanıcının rotaya verdiği isim
     description = models.TextField(blank=True, null=True)
     route = models.JSONField(default=list)  # Boş liste olarak başlatmak iyi bir pratik
+    suggestions = models.JSONField(default=list, blank=True)
+    start_location = models.JSONField(default=dict, blank=True)  # ← baştan
+    end_location = models.JSONField(default=dict, blank=True)  # ← sona
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)  # Genellikle güncellenme zamanını da tutmak istenir
 

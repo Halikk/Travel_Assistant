@@ -1,122 +1,131 @@
-// src/components/EditItineraryPage.jsx (Yeni veya güncellenmiş dosya)
-import React, { useState, useEffect, useContext } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+// src/components/EditItineraryPage.jsx
+import React, { useState, useEffect, useContext, useMemo } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../AuthContext';
-import ItineraryPlanner from './ItineraryPlanner'; // Doğrudan ItineraryPlanner'ı kullanacağız
+import ItineraryPlanner from './ItineraryPlanner';
 
-function EditItineraryPage() {
-  const { itineraryId } = useParams(); // URL'den ID'yi al
-  const { token } = useContext(AuthContext);
-  const navigate = useNavigate(); // Yönlendirme için
+export default function EditItineraryPage() {
+  const { itineraryId } = useParams();
+  const { token }      = useContext(AuthContext);
+  const navigate       = useNavigate();
+  const location       = useLocation();
 
-  const [initialData, setInitialData] = useState(null); // ItineraryPlanner için gerekli tüm prop'ları tutacak
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Eğer PlanView’den router state ile suggestions geldiyse al,
+  // yoksa boş dizi
+  const originalSuggestions = useMemo(
+    () => location.state?.suggestions || [],
+    [location.state]
+  );
+
+  const [plannerProps, setPlannerProps] = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState(null);
 
   useEffect(() => {
-    const fetchItineraryDetails = async () => {
-      if (!token || !itineraryId) {
-        setError("Geçersiz istek veya giriş yapılmamış.");
-        setLoading(false);
-        // navigate('/login'); // Gerekirse login'e yönlendir
-        return;
-      }
+    if (!token) return;
 
-      setLoading(true);
-      setError(null);
+    axios
+      .get(`/api/v1/itineraries/${itineraryId}/`, {
+        headers: { Authorization: `Token ${token}` }
+      })
+      .then(response => {
+        const data = response.data;
 
-      try {
-        const response = await axios.get(`/api/v1/itineraries/${itineraryId}/`, {
-          headers: { 'Authorization': `Token ${token}` },
-        });
+        // Destructure tüm ihtiyacımız olan alanları
+        const {
+          places_details,    // serializer’daki source='places_in_order'
+          suggestions,
+          route,
+          name,
+          id
+        } = data;
 
-        const fetchedItinerary = response.data;
-
-        // ItineraryPlanner'ın beklediği prop'ları hazırla
-        const editingItinerary = {
-          id: fetchedItinerary.id,
-          name: fetchedItinerary.name,
-          route: fetchedItinerary.route, // ['__start__', 'id1', 'id2', '__end__']
-        };
-
-        // initialLocation ve finishLocation'ı route ve places_details'tan çıkar
-        let initialLoc = { latitude: 0, longitude: 0 }; // Varsayılan
-        let finishLoc = { latitude: 0, longitude: 0 };  // Varsayılan
-
-        const routePlaceIds = fetchedItinerary.route.filter(id => !String(id).startsWith("__"));
-        const placesDetailsMap = new Map((fetchedItinerary.places_details || []).map(p => [p.external_id, p]));
-
-        if (routePlaceIds.length > 0) {
-            const firstPlaceId = routePlaceIds[0];
-            const lastPlaceId = routePlaceIds[routePlaceIds.length - 1];
-
-            const firstPlaceDetail = placesDetailsMap.get(firstPlaceId);
-            const lastPlaceDetail = placesDetailsMap.get(lastPlaceId);
-
-            if (firstPlaceDetail) {
-                initialLoc = {
-                    latitude: parseFloat(firstPlaceDetail.latitude),
-                    longitude: parseFloat(firstPlaceDetail.longitude)
-                };
-            }
-            if (lastPlaceDetail) {
-                finishLoc = {
-                    latitude: parseFloat(lastPlaceDetail.latitude),
-                    longitude: parseFloat(lastPlaceDetail.longitude)
-                };
-            }
+        // 1) Başlangıç konumu = places_details[0]
+        let initialLoc;
+        if (Array.isArray(places_details) && places_details.length > 0) {
+          const first = places_details[0];
+          initialLoc = {
+            external_id: first.external_id,
+            name:        first.name,
+            latitude:    parseFloat(first.latitude),
+            longitude:   parseFloat(first.longitude),
+            address:     first.address || ''
+          };
+        } else {
+          initialLoc = {
+            external_id: '__start__',
+            name:        'Başlangıç',
+            latitude:    0,
+            longitude:   0,
+            address:     ''
+          };
         }
 
+        // 2) Bitiş konumu = places_details[last]
+        let finishLoc;
+        if (Array.isArray(places_details) && places_details.length > 1) {
+          const last = places_details[places_details.length - 1];
+          finishLoc = {
+            external_id: last.external_id,
+            name:        last.name,
+            latitude:    parseFloat(last.latitude),
+            longitude:   parseFloat(last.longitude),
+            address:     last.address || ''
+          };
+        } else {
+          finishLoc = {
+            external_id: '__end__',
+            name:        'Bitiş',
+            latitude:    0,
+            longitude:   0,
+            address:     ''
+          };
+        }
 
-        setInitialData({
-          suggestions: fetchedItinerary.places_details || [], // Rotadaki yerleri öneri olarak kullanabiliriz
-          initialLocation: initialLoc,
-          finishLocation: finishLoc,
-          editingItinerary: editingItinerary,
-        });
+        // 3) editingItinerary objesi
+        const editingItinerary = { id, name, route };
 
-      } catch (err) {
-        console.error("Failed to fetch itinerary for editing:", err);
-        if (err.response && err.response.status === 404) {
-          setError("Seyahat planı bulunamadı.");
-        } else if (err.response && err.response.status === 401) {
-          setError("Bu içeriği görmek için giriş yapmalısınız.");
+        // 4) plannerProps’u set et
+       setPlannerProps({
+  suggestions:     data.suggestions,
+  initialLocation: data.start_location,   // ← artık backend’den geliyor
+  finishLocation:  data.end_location,     // ← artık backend’den geliyor
+  editingItinerary: {
+    id:    data.id,
+    name:  data.name,
+    route: data.route
+  }
+});
+      })
+      .catch(err => {
+        if (err.response?.status === 404) {
+          setError('Seyahat planı bulunamadı.');
+        } else if (err.response?.status === 401) {
+          setError('Giriş yapmanız gerekiyor.');
           navigate('/login');
+        } else {
+          setError('Veri yüklenirken bir hata oluştu.');
         }
-        else {
-          setError("Seyahat planı yüklenirken bir sorun oluştu.");
-        }
-      } finally {
+      })
+      .finally(() => {
         setLoading(false);
-      }
-    };
-
-    fetchItineraryDetails();
-  }, [itineraryId, token, navigate]);
+      });
+  }, [itineraryId, token, originalSuggestions, navigate]);
 
   if (loading) {
-    return <div className="text-center p-10">Seyahat planı detayları yükleniyor...</div>;
+    return <div className="text-center p-10">Yükleniyor…</div>;
   }
-
   if (error) {
-    return <div className="text-center p-10 text-red-600 bg-red-100 rounded-md">Hata: {error}</div>;
+    return <div className="text-center p-10 text-red-600">{error}</div>;
   }
 
-  if (!initialData) {
-    // Bu durum normalde error veya loading ile yakalanmalı
-    return <div className="text-center p-10">Seyahat planı verileri hazırlanamadı.</div>;
-  }
-
-  // ItineraryPlanner'ı yüklenen verilerle render et
   return (
     <ItineraryPlanner
-      suggestions={initialData.suggestions}
-      initialLocation={initialData.initialLocation}
-      finishLocation={initialData.finishLocation}
-      editingItinerary={initialData.editingItinerary}
+      suggestions     ={plannerProps.suggestions}
+      initialLocation ={plannerProps.initialLocation}
+      finishLocation  ={plannerProps.finishLocation}
+      editingItinerary={plannerProps.editingItinerary}
     />
   );
 }
-
-export default EditItineraryPage;

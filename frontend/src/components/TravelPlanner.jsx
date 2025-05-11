@@ -1,98 +1,118 @@
 // src/components/TravelPlanner.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import PlanView from './PlanView';
 import ItineraryPlanner from './ItineraryPlanner';
-import { Card, CardContent } from "./ui/card"; // ui/card importunun doğru olduğundan emin olun
+import { Card, CardContent } from "./ui/card"; // Shadcn/ui veya benzeri bir kütüphaneden geldiğini varsayıyorum
+import { useJsApiLoader } from '@react-google-maps/api';
+
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+const LIBRARIES_TO_LOAD = ["places"]; // Autocomplete için "places". DirectionsService temel API'de.
 
 export default function TravelPlanner() {
   const [suggestions, setSuggestions] = useState([]);
   const [initialLocation, setInitialLocation] = useState(null);
   const [finishLocation, setFinishLocation] = useState(null);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState(null); // Hata mesajı için state
+  const [planReadyForItinerary, setPlanReadyForItinerary] = useState(false);
+  const [apiError, setApiError] = useState(null);
 
-  const handlePlan = (sugs, initLoc, finalLoc) => {
-    setError(null); // Önceki hataları temizle
+  useEffect(() => {
+    if (!GOOGLE_MAPS_API_KEY) {
+      const errorMsg = "Google Maps API Anahtarı bulunamadı! Lütfen .env dosyanızı ve REACT_APP_GOOGLE_MAPS_API_KEY değişkenini kontrol edin.";
+      console.error(errorMsg);
+      setApiError(errorMsg);
+    }
+  }, []);
 
-    // initLoc ve finalLoc'un geçerli olup olmadığını kontrol et
-    const isValidLocation = (loc) => {
-      return loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
-    };
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY || "",
+    libraries: LIBRARIES_TO_LOAD,
+    id: 'travel-planner-google-maps-script'
+  });
+
+  useEffect(() => {
+    if (loadError) {
+      const errorMsg = `Google Harita servisleri yüklenemedi. Hata: ${loadError.message}. API anahtarınızı, internet bağlantınızı ve Google Cloud Console ayarlarınızı kontrol edin.`;
+      console.error("Google Maps Load Error in TravelPlanner:", loadError);
+      setApiError(errorMsg);
+    } else if (isLoaded) {
+      setApiError(null);
+    }
+  }, [isLoaded, loadError]);
+
+  const handlePlanSubmitted = (sugs, initLoc, finalLoc) => {
+    setApiError(null);
+    const isValidLocation = (loc) => loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
 
     if (!isValidLocation(initLoc) || !isValidLocation(finalLoc)) {
-      console.error("Invalid initial or finish location received from PlanView:", initLoc, finalLoc);
-      // Kullanıcıya bir hata mesajı gösterebilir veya varsayılan bir duruma dönebiliriz.
-      // Şimdilik ItineraryPlanner'ı render etmeyelim ve bir hata gösterelim.
-      setError("Başlangıç veya bitiş noktası bilgileri eksik veya geçersiz. Lütfen planınızı tekrar oluşturun.");
-      setReady(false); // ItineraryPlanner'ı gösterme
-      // State'leri de sıfırlayabiliriz veya null bırakabiliriz
-      setSuggestions([]);
-      setInitialLocation(null);
-      setFinishLocation(null);
-      return; // Fonksiyondan çık
+      alert("Başlangıç veya bitiş noktası bilgileri eksik veya geçersiz. Lütfen geçerli yerler seçin.");
+      setPlanReadyForItinerary(false);
+      return;
     }
-
-    // Eğer buraya geldiysek, lokasyonlar geçerlidir.
-    setSuggestions(sugs || []); // sugs undefined ise boş dizi ata
+    setSuggestions(sugs || []);
     setInitialLocation(initLoc);
     setFinishLocation(finalLoc);
-    setReady(true);
+    setPlanReadyForItinerary(true);
   };
 
-  // ItineraryPlanner'ı resetlemek için bir fonksiyon (opsiyonel)
-  const handleResetPlan = () => {
-    setReady(false);
+  const handleResetToPlanView = () => {
+    setPlanReadyForItinerary(false);
     setSuggestions([]);
     setInitialLocation(null);
     setFinishLocation(null);
-    setError(null);
+    setApiError(null);
   };
+
+  if (apiError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-red-50">
+        <p className="text-red-600 font-semibold text-center">{apiError}</p>
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <p className="text-xl text-gray-600">Harita altyapısı ve servisleri yükleniyor...</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div
-      className="min-h-screen bg-gray-50 p-6"
+      className="min-h-screen bg-gray-50 p-4 sm:p-6 flex flex-col items-center justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
     >
-      <div className="max-w-5xl mx-auto">
-        <Card className="rounded-2xl shadow-lg">
-          <CardContent className="p-8">
-            {error && ( // Hata mesajını göster
-              <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
-                <p>{error}</p>
-                <button
-                  onClick={handleResetPlan}
-                  className="mt-2 px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-                >
-                  Yeni Plan Oluştur
-                </button>
-              </div>
+      <div className="w-full max-w-2xl mx-auto"> {/* max-w-2xl veya istediğiniz bir genişlik */}
+        <Card className="rounded-2xl shadow-xl overflow-hidden"> {/* Daha belirgin gölge için shadow-xl */}
+          <CardContent className="p-6 sm:p-10 flex flex-col items-center"> {/* İçeriği ortalamak için */}
+            {!planReadyForItinerary ? (
+              <PlanView onPlan={handlePlanSubmitted} />
+            ) : (
+              // initialLocation ve finishLocation null değilse ItineraryPlanner'ı render et
+              initialLocation && finishLocation ? (
+                <>
+                  <ItineraryPlanner
+                    suggestions={suggestions}
+                    initialLocation={initialLocation}
+                    finishLocation={finishLocation}
+                  />
+                  <div className="mt-8 text-center"> {/* Buton için daha fazla boşluk */}
+                      <button
+                          onClick={handleResetToPlanView}
+                          className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition shadow hover:shadow-md"
+                      >
+                          Yeni Plan Oluştur / Değiştir
+                      </button>
+                  </div>
+                </>
+              ) : ( // Eğer initialLocation veya finishLocation null ise (beklenmedik durum)
+                <p className="text-center text-red-500">Rota verileri hazırlanırken bir sorun oluştu.</p>
+              )
             )}
-
-            {!ready && !error ? ( // Eğer hazır değilse ve hata yoksa PlanView'ı göster
-              <PlanView onPlan={handlePlan} />
-            ) : null}
-
-            {ready && initialLocation && finishLocation && !error ? ( // Sadece her şey yolundaysa ItineraryPlanner'ı göster
-              <>
-                <ItineraryPlanner
-                  suggestions={suggestions}
-                  initialLocation={initialLocation}
-                  finishLocation={finishLocation}
-                  // editingItinerary={null} // Eğer düzenleme özelliği varsa
-                />
-                <div className="mt-6 text-center">
-                    <button
-                        onClick={handleResetPlan}
-                        className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
-                    >
-                        Yeni Plan Oluştur / Değiştir
-                    </button>
-                </div>
-              </>
-            ) : null}
           </CardContent>
         </Card>
       </div>

@@ -54,6 +54,8 @@ class ItinerarySerializer(serializers.ModelSerializer):
             'name',
             'description', # Eğer Itinerary modeline eklerseniz
             'route',       # Kaydetme ve güncelleme için bu alan kullanılır (external_id listesi)
+            'suggestions',
+            'start_location', 'end_location',
             'places_details', # Detayları göstermek için bu alan kullanılır (Place nesneleri)
             'created_at',
             'updated_at'
