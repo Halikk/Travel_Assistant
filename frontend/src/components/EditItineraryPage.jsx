@@ -1,22 +1,14 @@
 // src/components/EditItineraryPage.jsx
-import React, { useState, useEffect, useContext, useMemo } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../AuthContext';
 import ItineraryPlanner from './ItineraryPlanner';
 
 export default function EditItineraryPage() {
   const { itineraryId } = useParams();
-  const { token }      = useContext(AuthContext);
-  const navigate       = useNavigate();
-  const location       = useLocation();
-
-  // Eğer PlanView’den router state ile suggestions geldiyse al,
-  // yoksa boş dizi
-  const originalSuggestions = useMemo(
-    () => location.state?.suggestions || [],
-    [location.state]
-  );
+  const { token }       = useContext(AuthContext);
+  const navigate        = useNavigate();
 
   const [plannerProps, setPlannerProps] = useState(null);
   const [loading, setLoading]           = useState(true);
@@ -25,78 +17,87 @@ export default function EditItineraryPage() {
   useEffect(() => {
     if (!token) return;
 
+    setLoading(true);
     axios
       .get(`/api/v1/itineraries/${itineraryId}/`, {
         headers: { Authorization: `Token ${token}` }
       })
-      .then(response => {
-        const data = response.data;
+      .then(({ data }) => {
+        // 1) Serializer’dan gelen yer detayları
+        const placesDetails = Array.isArray(data.places_details)
+          ? data.places_details.map(p => ({
+              external_id: p.external_id,
+              name:        p.name,
+              latitude:    parseFloat(p.latitude),
+              longitude:   parseFloat(p.longitude),
+              category:    p.category
+            }))
+          : [];
 
-        // Destructure tüm ihtiyacımız olan alanları
-        const {
-          places_details,    // serializer’daki source='places_in_order'
-          suggestions,
-          route,
-          name,
-          id
-        } = data;
-
-        // 1) Başlangıç konumu = places_details[0]
-        let initialLoc;
-        if (Array.isArray(places_details) && places_details.length > 0) {
-          const first = places_details[0];
-          initialLoc = {
-            external_id: first.external_id,
-            name:        first.name,
-            latitude:    parseFloat(first.latitude),
-            longitude:   parseFloat(first.longitude),
-            address:     first.address || ''
-          };
-        } else {
-          initialLoc = {
-            external_id: '__start__',
-            name:        'Başlangıç',
-            latitude:    0,
-            longitude:   0,
-            address:     ''
-          };
+        // 2) start_location / end_location JSONField’ından geliyorsa kullan
+        //    Aksi halde placesDetails[0] ve placesDetails[last]
+        let initialLoc = data.start_location;
+        if (
+          !initialLoc ||
+          initialLoc.latitude == null ||
+          initialLoc.longitude == null
+        ) {
+          if (placesDetails.length > 0) {
+            const first = placesDetails[0];
+            initialLoc = {
+              external_id: first.external_id,
+              name:        first.name,
+              latitude:    first.latitude,
+              longitude:   first.longitude
+            };
+          } else {
+            initialLoc = {
+              external_id: '__start__',
+              name:        'Başlangıç',
+              latitude:    0,
+              longitude:   0
+            };
+          }
         }
 
-        // 2) Bitiş konumu = places_details[last]
-        let finishLoc;
-        if (Array.isArray(places_details) && places_details.length > 1) {
-          const last = places_details[places_details.length - 1];
-          finishLoc = {
-            external_id: last.external_id,
-            name:        last.name,
-            latitude:    parseFloat(last.latitude),
-            longitude:   parseFloat(last.longitude),
-            address:     last.address || ''
-          };
-        } else {
-          finishLoc = {
-            external_id: '__end__',
-            name:        'Bitiş',
-            latitude:    0,
-            longitude:   0,
-            address:     ''
-          };
+        let finishLoc = data.end_location;
+        if (
+          !finishLoc ||
+          finishLoc.latitude == null ||
+          finishLoc.longitude == null
+        ) {
+          if (placesDetails.length > 0) {
+            const last = placesDetails[placesDetails.length - 1];
+            finishLoc = {
+              external_id: last.external_id,
+              name:        last.name,
+              latitude:    last.latitude,
+              longitude:   last.longitude
+            };
+          } else {
+            finishLoc = {
+              external_id: '__end__',
+              name:        'Bitiş',
+              latitude:    0,
+              longitude:   0
+            };
+          }
         }
 
-        // 3) editingItinerary objesi
-        const editingItinerary = { id, name, route };
+        // 3) Düzenleme objesi
+        const editingItinerary = {
+          id:    data.id,
+          name:  data.name,
+          route: data.route
+        };
 
-        // 4) plannerProps’u set et
-       setPlannerProps({
-  suggestions:     data.suggestions,
-  initialLocation: data.start_location,   // ← artık backend’den geliyor
-  finishLocation:  data.end_location,     // ← artık backend’den geliyor
-  editingItinerary: {
-    id:    data.id,
-    name:  data.name,
-    route: data.route
-  }
-});
+        // 4) ItineraryPlanner’a props olarak geç
+        setPlannerProps({
+          suggestions:      data.suggestions || [],  // AI önerileri
+          initialLocation:  initialLoc,
+          finishLocation:   finishLoc,
+          editingItinerary
+        });
       })
       .catch(err => {
         if (err.response?.status === 404) {
@@ -111,7 +112,7 @@ export default function EditItineraryPage() {
       .finally(() => {
         setLoading(false);
       });
-  }, [itineraryId, token, originalSuggestions, navigate]);
+  }, [itineraryId, token, navigate]);
 
   if (loading) {
     return <div className="text-center p-10">Yükleniyor…</div>;
