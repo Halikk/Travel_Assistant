@@ -3,58 +3,78 @@
 import spacy
 from transformers import pipeline
 
-# 1) spaCy modelini yükle
-#    (Türkçe için tr_core_news_sm, İngilizce için en_core_web_sm)
-nlp_spacy = spacy.load("en_core_web_sm")
+# 1) İngilizce spaCy modeli (keyword extraction için)
+nlp_spacy_en = spacy.load("en_core_web_sm")
 
-# 2) Hugging Face zero-shot sınıflandırıcı (isteğe bağlı)
-#    Kullanıcının metni belirli kategorilere atamak için kullanacağız.
+# 2) Türkçe→İngilizce çeviri pipeline’ı
+#    (Helsinki-NLP/opus-mt-tr-en modeli)
+translator = pipeline(
+    "translation",
+    model="Helsinki-NLP/opus-mt-tr-en",
+    device=-1
+)
+
+# 3) Zero-shot sınıflandırıcı (İngilizce metinle çalışacak)
 classifier = pipeline(
     "zero-shot-classification",
     model="facebook/bart-large-mnli",
-    device=0  # GPU yoksa -1
+    device=-1
 )
 
-# Öneri kategorileri (örn. müze, restoran, tarihi yer…)
+# İngilizce kategoriler
 CATEGORIES = [
     "museum", "restaurant", "historical site", "nature park",
     "shopping", "nightlife", "adventure", "gastronomy",
     "family", "relaxation"
 ]
 
-def extract_keywords(text: str, top_k: int = 5) -> list[str]:
+def translate_to_english(text: str) -> str:
     """
-    spaCy ile metinden en sık geçen önemli kelimeleri döndürür.
+    Gelen Türkçe metni İngilizce'ye çevirir.
     """
-    doc = nlp_spacy(text.lower())
-    # isim ve özel isimleri seç, stop-word filtresi zaten spaCy’de var
-    candidates = [token.lemma_ for token in doc
-                  if token.pos_ in ("NOUN", "PROPN") and not token.is_stop]
-    # frekansa göre sırala
-    freq = {}
-    for kw in candidates:
-        freq[kw] = freq.get(kw, 0) + 1
-    # en yüksek freq’e sahip kelimeler
-    return sorted(freq, key=freq.get, reverse=True)[:top_k]
+    # Uzun metinleri bölüp çevirmen gerekebilir; basit örnek:
+    result = translator(text, max_length=512)
+    return result[0]["translation_text"]
 
-def classify_preferences(text: str) -> dict[str, float]:
+def extract_keywords(text_en: str, top_k: int = 5) -> list[str]:
     """
-    Zero-shot sınıflandırıcı ile text’i CATEGORIES içine atar,
-    kategori olasılıklarını döner.
+    İngilizce spaCy ile metinden en sık geçen isim ve özel isim lehimlerini döndürür.
     """
-    result = classifier(text, CATEGORIES)
-    # {'labels': [...], 'scores': [...]}
+    doc = nlp_spacy_en(text_en.lower())
+    candidates = [
+        token.lemma_ for token in doc
+        if token.pos_ in ("NOUN", "PROPN") and not token.is_stop and len(token.lemma_) > 2
+    ]
+    freq = {}
+    for w in candidates:
+        freq[w] = freq.get(w, 0) + 1
+    # En sık geçen top_k kelime
+    return sorted(freq, key=lambda k: freq[k], reverse=True)[:top_k]
+
+def classify_preferences(text_en: str) -> dict[str, float]:
+    """
+    İngilizce metni CATEGORIES içine atar ve olasılıkları döner.
+    """
+    result = classifier(text_en, CATEGORIES)
     return dict(zip(result["labels"], result["scores"]))
 
-def analyze_user_preferences(text: str) -> dict:
+def analyze_user_preferences(text_tr: str) -> dict:
     """
-    Kullanıcı girdisini al, hem keyword çıkar hem de kategori olasılıklarını hesapla.
+    Adım 1: Türkçeyi İngilizceye çevir.
+    Adım 2: İngilizce keyword çıkar.
+    Adım 3: İngilizce zero-shot sınıflandırma.
     """
-    kws = extract_keywords(text, top_k=8)
-    scores = classify_preferences(text)
-    # Sadece % üstünde (örn. 0.1) skorları alabilirsiniz
-    prefs = {cat: score for cat, score in scores.items() if score > 0.1}
+    # 1) Çeviri
+    text_en = translate_to_english(text_tr)
+    # 2) Keyword extraction
+    kws     = extract_keywords(text_en, top_k=8)
+    # 3) Zero-shot classification
+    scores  = classify_preferences(text_en)
+    # 0.1 üzeri skorları alın
+    prefs   = {cat: s for cat, s in scores.items() if s > 0.1}
+
     return {
-        "keywords": kws,
-        "categories": prefs
+        "translated_text": text_en,
+        "keywords":        kws,
+        "categories":      prefs
     }
