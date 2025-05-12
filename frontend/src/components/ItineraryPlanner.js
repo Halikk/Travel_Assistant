@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useContext, useMemo } from 'react';
 import axios from 'axios';
 import MapView from './MapView';
+import TravelTimeDisplay from './TravelTimeDisplay';
 import { AuthContext } from '../AuthContext';
 
 // Haversine hesaplama (metre)
@@ -23,15 +24,21 @@ function reorderNearest(list) {
   let middle = list.slice(1, -1);
   const ordered = [start];
   let current = start;
+  
   while (middle.length) {
+    // Store current in a separate variable to avoid the closure issue
+    const currentPoint = current;
+    
     let bestIdx = 0, bestDist = Infinity;
-    middle.forEach((p,i) => {
-      const d = haversine(current,p);
-      if (d<bestDist) { bestDist=d; bestIdx=i; }
+    middle.forEach((p, i) => {
+      const d = haversine(currentPoint, p);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
     });
-    current = middle.splice(bestIdx,1)[0];
+    
+    current = middle.splice(bestIdx, 1)[0];
     ordered.push(current);
   }
+  
   ordered.push(end);
   return ordered;
 }
@@ -90,11 +97,16 @@ export default function ItineraryPlanner({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError]         = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+  const [travelMode, setTravelMode] = useState('DRIVING');
 
-  // 1️⃣ Başlangıç/Bitiş’i oluştur
+  // 1️⃣ Başlangıç/Bitiş'i oluştur
   useEffect(() => {
-    setStartPlace(createSpecialPlace('__start__', initialLocation));
-    setEndPlace(  createSpecialPlace('__end__',  finishLocation));
+    const start = createSpecialPlace('__start__', initialLocation);
+    const end = createSpecialPlace('__end__', finishLocation);
+    setStartPlace(start);
+    setEndPlace(end);
+    // Başlangıçta selectedPlaces'i güncelle
+    setSelectedPlaces([start, end]);
   }, [initialLocation, finishLocation]);
 
   // 2️⃣ Yeni rota mı / düzenleme modu mu?
@@ -113,14 +125,13 @@ export default function ItineraryPlanner({
       setItineraryName(editingItinerary.name || 'Düzenlenen Rota');
       setCurrentItineraryId(editingItinerary.id);
 
-      // Gerçek ID’leri al (__*__ başlıcaklar atlanır)
+      // Gerçek ID'leri al (__*__ başlıcaklar atlanır)
       const coreIds = editingItinerary.route.filter(id => !id.startsWith('__'));
       // Map ile objelere dönüştür
       const mapById = new Map(available.map(p=>[p.external_id,p]));
       const middle  = coreIds.map(id=>mapById.get(id)).filter(Boolean);
 
       const initialList = [startPlace, ...middle, endPlace];
-      // Eğer isterseniz nearest ile sıralayabilirsiniz; ben aynen korudum
       setSelectedPlaces(reorderNearest(initialList));
     } else {
       setItineraryName('Yeni Rotam');
@@ -223,7 +234,12 @@ export default function ItineraryPlanner({
 
   // harita koordinatları
   const coords = useMemo(() =>
-    selectedPlaces.map(p=>({lat:p.latitude,lng:p.longitude,id:p.external_id,name:p.name})),
+    selectedPlaces.map(p=>({
+      lat: p.latitude, 
+      lng: p.longitude, 
+      id: p.external_id, 
+      name: p.name
+    })),
     [selectedPlaces]
   );
 
@@ -240,19 +256,76 @@ export default function ItineraryPlanner({
       <div>
         <label className="block mb-1">Rota Adı:</label>
         <input
-          value={itineraryName}
-          onChange={e=>{setItineraryName(e.target.value); setError(null); setSuccessMsg(null)}}
+          type="text"
           className="w-full border p-2 rounded"
-          placeholder="Örn: Ege Macerası"
+          value={itineraryName}
+          onChange={e=>setItineraryName(e.target.value)}
+          placeholder="Rotanıza bir isim verin"
         />
       </div>
-      {error      && <div className="text-red-600">{error}</div>}
-      {successMsg && <div className="text-green-600">{successMsg}</div>}
+
+      <div className="h-64 border rounded overflow-hidden">
+        <MapView 
+          coords={coords} 
+          startLocationId="__start__" 
+          endLocationId="__end__" 
+        />
+      </div>
+
+      {/* Seyahat Modu Seçimi */}
+      <div className="flex space-x-2 mb-4">
+        <div className="text-sm font-medium text-gray-700 flex items-center mr-2">Seyahat Modu:</div>
+        <button
+          onClick={() => setTravelMode('DRIVING')}
+          className={`px-3 py-1.5 text-sm rounded-full ${travelMode === 'DRIVING' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+        >
+          <span className="flex items-center">
+            <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 10H16M7 14H8M16 14H17M3.5 18V9C3.5 7.89543 4.39543 7 5.5 7H18.5C19.6046 7 20.5 7.89543 20.5 9V18M3.5 18H20.5M3.5 18C3.5 19.1046 4.39543 20 5.5 20H6.5M20.5 18C20.5 19.1046 19.6046 20 18.5 20H17.5M6.5 20V19C6.5 18.4477 6.94772 18 7.5 18H16.5C17.0523 18 17.5 18.4477 17.5 19V20M6.5 20H17.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            Araç
+          </span>
+        </button>
+        <button
+          onClick={() => setTravelMode('WALKING')}
+          className={`px-3 py-1.5 text-sm rounded-full ${travelMode === 'WALKING' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+        >
+          <span className="flex items-center">
+            <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13.5 5.5C13.5 6.88071 12.3807 8 11 8C9.61929 8 8.5 6.88071 8.5 5.5C8.5 4.11929 9.61929 3 11 3C12.3807 3 13.5 4.11929 13.5 5.5Z" fill="currentColor"/>
+              <path d="M13 14.5L11 22M13 14.5L16 17.5M13 14.5L9 11M9 11L10 8.5M9 11L6 10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Yürüyüş
+          </span>
+        </button>
+      </div>
+
+      {/* Seyahat zamanı görüntüleme */}
+      {selectedPlaces.length >= 2 && (
+        <TravelTimeDisplay 
+          coords={coords} 
+          travelMode={travelMode} 
+          startLocationId="__start__" 
+          endLocationId="__end__" 
+        />
+      )}
+
+      {successMsg && (
+        <div className="p-3 bg-green-100 text-green-800 rounded">
+          {successMsg}
+        </div>
+      )}
+
+      {error && (
+        <div className="p-3 bg-red-100 text-red-800 rounded">
+          {error}
+        </div>
+      )}
 
       {/* ÖNERİLER */}
       {Object.entries(suggestionGroups).map(([cat, items])=>(
         <div key={cat}>
-          <h3 className="font-semibold">{niceCategory(cat)}</h3>
+          <h3 className="text-lg font-semibold">{niceCategory(cat)}</h3>
           <div className="flex flex-wrap gap-2 mt-2">
             {items.map(p=>(
               <button
@@ -269,40 +342,39 @@ export default function ItineraryPlanner({
         </div>
       ))}
 
-      {/* SEÇİLEN DURAKLAR */}
       <div>
-        <h3 className="font-semibold">Seçilen Duraklar ({selectedPlaces.length})</h3>
+        <h3 className="text-lg font-semibold mb-2">Seçilen Duraklar</h3>
         <ol className="mt-2 space-y-1">
-          {selectedPlaces.map((p,i)=>(
-            <li key={`${p.external_id}-${i}`} className="flex items-center bg-gray-100 p-2 rounded">
-              <span className="w-6 text-center font-bold">
-                {p.category==='special_start'
-                  ? 'S'
-                  : p.category==='special_end'
-                    ? 'E'
-                    : i}
-              </span>
-              <span className="ml-2">{p.name}</span>
-            </li>
-          ))}
+          {(() => {
+            let waypointCounter = 1; // Başlangıç ve bitiş hariç duraklar için sayaç
+            return selectedPlaces.map((p, i) => {
+              const isStart = p.category === 'special_start';
+              const isEnd = p.category === 'special_end';
+              
+              // Ara durak numarası için sayaç değerini al ve artır
+              const displayNumber = isStart || isEnd ? null : waypointCounter++;
+              
+              return (
+                <li key={`${p.external_id}-${i}`} className="flex items-center bg-gray-100 p-2 rounded">
+                  <span className="w-6 text-center font-bold">
+                    {isStart ? 'B' : isEnd ? 'S' : displayNumber}
+                  </span>
+                  <span className="ml-2">{p.name}</span>
+                </li>
+              );
+            });
+          })()}
         </ol>
       </div>
 
-      <button
-        onClick={handleSave}
-        disabled={isLoading}
-        className="w-full bg-green-600 text-white py-2 rounded disabled:opacity-50"
-      >
-        {isLoading ? 'Kaydediliyor…' : (currentItineraryId ? 'Güncelle' : 'Kaydet')}
-      </button>
-
-      <div className="h-64 border rounded overflow-hidden">
-        {coords.length>=2
-          ? <MapView coords={coords}/>
-          : <div className="flex items-center justify-center h-full text-gray-500">
-              Harita için en az iki nokta seçin
-            </div>
-        }
+      <div className="flex justify-end space-x-3">
+        <button
+          onClick={handleSave}
+          disabled={isLoading}
+          className={`px-4 py-2 rounded bg-blue-600 text-white ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700'}`}
+        >
+          {isLoading ? 'Kaydediliyor...' : currentItineraryId ? 'Rotayı Güncelle' : 'Rotayı Kaydet'}
+        </button>
       </div>
     </div>
   );

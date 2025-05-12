@@ -9,6 +9,29 @@ import { useJsApiLoader } from '@react-google-maps/api';
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
 const LIBRARIES_TO_LOAD = ["places"]; // Autocomplete için "places". DirectionsService temel API'de.
 
+// Button animation variants
+const buttonVariants = {
+  initial: { 
+    scale: 1, 
+    boxShadow: "0 4px 6px -1px rgba(99, 102, 241, 0.1)" 
+  },
+  hover: { 
+    scale: 1.05, 
+    boxShadow: "0 10px 15px -3px rgba(99, 102, 241, 0.3)",
+    y: -5,
+    transition: { 
+      type: "spring", 
+      stiffness: 400, 
+      damping: 10 
+    } 
+  },
+  tap: { 
+    scale: 0.97, 
+    boxShadow: "0 4px 6px -1px rgba(99, 102, 241, 0.2)",
+    y: 0 
+  }
+};
+
 export default function TravelPlanner() {
   const [suggestions, setSuggestions] = useState([]);
   const [initialLocation, setInitialLocation] = useState(null);
@@ -101,12 +124,19 @@ export default function TravelPlanner() {
                     finishLocation={finishLocation}
                   />
                   <div className="mt-8 text-center"> {/* Buton için daha fazla boşluk */}
-                      <button
-                          onClick={handleResetToPlanView}
-                          className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition shadow hover:shadow-md"
-                      >
-                          Yeni Plan Oluştur / Değiştir
-                      </button>
+                    <motion.button
+                      onClick={handleResetToPlanView}
+                      className="px-6 py-3.5 bg-gradient-to-r from-indigo-600 via-violet-500 to-purple-600 text-white font-semibold rounded-xl shadow-md hover:shadow-xl transition-all duration-300 flex items-center space-x-2 mx-auto"
+                      variants={buttonVariants}
+                      initial="initial"
+                      whileHover="hover"
+                      whileTap="tap"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                      </svg>
+                      <span>Yeni Plan Oluştur / Değiştir</span>
+                    </motion.button>
                   </div>
                 </>
               ) : ( // Eğer initialLocation veya finishLocation null ise (beklenmedik durum)

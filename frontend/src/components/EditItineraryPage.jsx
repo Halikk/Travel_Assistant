@@ -23,18 +23,19 @@ export default function EditItineraryPage() {
         headers: { Authorization: `Token ${token}` }
       })
       .then(({ data }) => {
-        // 1) Serializer’dan gelen yer detayları
+        // 1) Serializer'dan gelen yer detayları
         const placesDetails = Array.isArray(data.places_details)
           ? data.places_details.map(p => ({
               external_id: p.external_id,
               name:        p.name,
               latitude:    parseFloat(p.latitude),
               longitude:   parseFloat(p.longitude),
-              category:    p.category
+              category:    p.category,
+              address:     p.address || p.name
             }))
           : [];
 
-        // 2) start_location / end_location JSONField’ından geliyorsa kullan
+        // 2) start_location / end_location JSONField'ından geliyorsa kullan
         //    Aksi halde placesDetails[0] ve placesDetails[last]
         let initialLoc = data.start_location;
         if (
@@ -48,14 +49,16 @@ export default function EditItineraryPage() {
               external_id: first.external_id,
               name:        first.name,
               latitude:    first.latitude,
-              longitude:   first.longitude
+              longitude:   first.longitude,
+              address:     first.address
             };
           } else {
             initialLoc = {
               external_id: '__start__',
               name:        'Başlangıç',
               latitude:    0,
-              longitude:   0
+              longitude:   0,
+              address:     'Başlangıç konumu'
             };
           }
         }
@@ -72,14 +75,16 @@ export default function EditItineraryPage() {
               external_id: last.external_id,
               name:        last.name,
               latitude:    last.latitude,
-              longitude:   last.longitude
+              longitude:   last.longitude,
+              address:     last.address
             };
           } else {
             finishLoc = {
               external_id: '__end__',
               name:        'Bitiş',
               latitude:    0,
-              longitude:   0
+              longitude:   0,
+              address:     'Bitiş konumu'
             };
           }
         }
@@ -88,10 +93,11 @@ export default function EditItineraryPage() {
         const editingItinerary = {
           id:    data.id,
           name:  data.name,
-          route: data.route
+          route: data.route,
+          places_details: placesDetails // places_details'ı da ekle
         };
 
-        // 4) ItineraryPlanner’a props olarak geç
+        // 4) ItineraryPlanner'a props olarak geç
         setPlannerProps({
           suggestions:      data.suggestions || [],  // AI önerileri
           initialLocation:  initialLoc,

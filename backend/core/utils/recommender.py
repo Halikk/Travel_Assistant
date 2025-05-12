@@ -9,7 +9,9 @@ from googlemaps.convert import decode_polyline
 
 gmaps = googlemaps.Client(key=settings.GOOGLE_PLACES_API_KEY)
 
+# Kategorileri Google türleriyle eşleştir (hem ID hem tam isim için)
 CATEGORY_MAPPING: dict[str,str] = {
+    # NLP sisteminden gelen kategoriler
     "historical site": "tourist_attraction",
     "gastronomy":      "restaurant",
     "nature park":     "park",
@@ -19,6 +21,20 @@ CATEGORY_MAPPING: dict[str,str] = {
     "adventure":       "amusement_park",
     "family":          "zoo",
     "relaxation":      "spa",
+    
+    # Frontend'den gelen kategori ID'leri
+    "historical_site": "tourist_attraction",
+    "restaurant":      "restaurant", 
+    "nature_park":     "park",
+    "museum":          "museum",
+    "shopping":        "shopping_mall",
+    "nightlife":       "night_club",
+    "adventure":       "amusement_park",
+    "family":          "zoo",
+    "relaxation":      "spa",
+    "gastronomy":      "restaurant",
+    
+    # Ek kategori eşleştirmeleri
     "cafe":            "cafe",
     "lodging":         "lodging",
     "beach":           "natural_feature"
